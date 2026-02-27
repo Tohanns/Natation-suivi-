@@ -1,0 +1,229 @@
+﻿<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AquaPace</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <header class="container site-header">
+    <div class="header-top">
+      <div class="brand">
+        <h1>AquaPace</h1>
+        <span class="brand-pill">Suivi natation</span>
+      </div>
+      <div class="auth-panel">
+        <input type="email" id="authEmail" placeholder="Email" />
+        <input type="password" id="authPassword" placeholder="Mot de passe" />
+        <button type="button" id="signInBtn" class="btn-secondary">Connexion</button>
+        <button type="button" id="signUpBtn" class="btn-secondary">Creer compte</button>
+        <button type="button" id="signOutBtn" class="btn-secondary hidden">Deconnexion</button>
+      </div>
+      <div class="data-actions global-data-actions">
+        <button type="button" id="exportDataBtn" class="btn-secondary">Exporter</button>
+        <button type="button" id="importDataBtn" class="btn-secondary">Importer</button>
+        <input type="file" id="importDataInput" accept="application/json" class="hidden" />
+      </div>
+    </div>
+    <p id="authStatus" class="data-message hidden" role="status" aria-live="polite"></p>
+    <p id="syncStatus" class="data-message hidden" role="status" aria-live="polite"></p>
+    <p id="dataMessage" class="data-message hidden" role="status" aria-live="polite"></p>
+  </header>
+
+  <main class="container grid">
+    <section class="card">
+      <h2>Ajouter une seance</h2>
+
+      <form id="workoutForm" class="form">
+        <label>
+          Date
+          <input type="date" id="date" required />
+        </label>
+
+        <label>
+          Type
+          <select id="type" required>
+            <option value="technique">Technique</option>
+            <option value="endurance">Endurance</option>
+            <option value="sprint">Sprint</option>
+            <option value="mixte">Mixte</option>
+          </select>
+        </label>
+
+        <label>
+          Type de nage
+          <select id="stroke" required>
+            <option value="crawl">Crawl</option>
+            <option value="dos">Dos</option>
+            <option value="brasse">Brasse</option>
+            <option value="papillon">Papillon</option>
+            <option value="mixte">Mixte</option>
+          </select>
+        </label>
+
+        <label>
+          Ressenti
+          <select id="feeling" required>
+            <option value="facile">Facile</option>
+            <option value="correct">Correct</option>
+            <option value="difficile">Difficile</option>
+            <option value="epuisant">Epuisant</option>
+          </select>
+        </label>
+
+        <label>
+          Distance (m)
+          <input type="number" id="distance" min="50" step="50" required />
+        </label>
+
+        <label>
+          Duree (min)
+          <input type="number" id="duration" min="1" step="1" required />
+        </label>
+
+        <label>
+          Notes
+          <textarea id="notes" rows="3" placeholder="ex: 10x100 nage complete..."></textarea>
+        </label>
+
+        <p id="formError" class="form-error hidden" role="alert" aria-live="polite"></p>
+
+        <div class="form-actions">
+          <button type="submit" id="submitBtn" class="btn-primary">Enregistrer</button>
+          <button type="button" id="cancelEdit" class="btn-secondary hidden">Annuler la modification</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Stats (semaine)</h2>
+      <div class="stats" id="stats">
+        <div class="stat"><span>Distance</span><strong id="weekDistance">0 m</strong></div>
+        <div class="stat"><span>Temps</span><strong id="weekTime">0 min</strong></div>
+        <div class="stat"><span>Allure moy.</span><strong id="weekPace">-</strong></div>
+        <div class="stat"><span>Seances</span><strong id="weekSessions">0</strong></div>
+        <div class="stat"><span>Record allure semaine</span><strong id="weekPaceRecord">-</strong></div>
+      </div>
+
+      <div class="actions">
+        <h2>Seances</h2>
+        <button type="button" id="clearAll" class="btn-secondary">Vider l'historique</button>
+      </div>
+
+      <div class="filters">
+        <label for="typeFilter">Filtrer par type</label>
+        <select id="typeFilter">
+          <option value="all">Tous</option>
+          <option value="technique">Technique</option>
+          <option value="endurance">Endurance</option>
+          <option value="sprint">Sprint</option>
+          <option value="mixte">Mixte</option>
+        </select>
+      </div>
+
+      <p id="emptyState" class="empty">Aucune seance pour le moment.</p>
+      <div id="workoutsList" class="list"></div>
+
+    </section>
+
+    <section class="card month-card">
+      <div class="chart-head">
+        <h2 id="chartTitle">Progression distance (mois)</h2>
+        <div class="chart-controls">
+          <div class="chart-tabs" role="tablist" aria-label="Type de graphique">
+            <button type="button" id="distanceTabBtn" class="chart-tab active" role="tab" aria-selected="true">Distance</button>
+            <button type="button" id="paceTabBtn" class="chart-tab" role="tab" aria-selected="false">Allure</button>
+          </div>
+          <div class="month-nav">
+            <button type="button" id="prevMonthBtn" class="btn-secondary month-btn">Mois precedent</button>
+            <span id="chartMonthLabel" class="chart-month-label">-</span>
+            <button type="button" id="nextMonthBtn" class="btn-secondary month-btn">Mois suivant</button>
+          </div>
+          <p id="monthTotal" class="chart-meta">Total du mois: 0 m</p>
+          <p id="paceChartMeta" class="chart-meta hidden">-</p>
+        </div>
+      </div>
+      <canvas id="monthDistanceChart" height="220" aria-label="Graphique de progression mensuelle de distance"></canvas>
+      <canvas id="paceSessionChart" class="hidden" height="220" aria-label="Graphique de comparaison des allures par seance"></canvas>
+
+      <div class="goal-block">
+        <div class="goal-form">
+          <label for="monthlyGoalInput">Objectif mensuel (m)</label>
+          <input type="number" id="monthlyGoalInput" min="100" step="100" value="10000" />
+        </div>
+        <p id="goalProgressText" class="chart-meta">Progression: 0% (0 / 10000 m)</p>
+        <div class="goal-bar" aria-hidden="true">
+          <div id="goalBarFill" class="goal-bar-fill"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card month-card">
+      <h2>Plan d'entrainement</h2>
+
+      <form id="planForm" class="form">
+        <label>
+          Date
+          <input type="date" id="planDate" required />
+        </label>
+
+        <label>
+          Type
+          <select id="planType" required>
+            <option value="technique">Technique</option>
+            <option value="endurance">Endurance</option>
+            <option value="sprint">Sprint</option>
+            <option value="mixte">Mixte</option>
+          </select>
+        </label>
+
+        <label>
+          Type de nage
+          <select id="planStroke" required>
+            <option value="crawl">Crawl</option>
+            <option value="dos">Dos</option>
+            <option value="brasse">Brasse</option>
+            <option value="papillon">Papillon</option>
+            <option value="mixte">Mixte</option>
+          </select>
+        </label>
+
+        <label>
+          Distance cible (m)
+          <input type="number" id="planDistance" min="50" step="50" required />
+        </label>
+
+        <label>
+          Duree cible (min)
+          <input type="number" id="planDuration" min="1" step="1" required />
+        </label>
+
+        <label>
+          Objectif de seance
+          <input type="text" id="planObjective" maxlength="120" placeholder="ex: travail d'allure 200m" />
+        </label>
+
+        <p id="planError" class="form-error hidden" role="alert" aria-live="polite"></p>
+
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Ajouter au plan</button>
+        </div>
+      </form>
+
+      <div class="stats plan-stats">
+        <div class="stat"><span>Prevues (semaine)</span><strong id="planWeekPlanned">0</strong></div>
+        <div class="stat"><span>Faites (semaine)</span><strong id="planWeekDone">0</strong></div>
+        <div class="stat"><span>Distance prevue</span><strong id="planWeekDistance">0 m</strong></div>
+        <div class="stat"><span>Distance realisee</span><strong id="planWeekDistanceDone">0 m</strong></div>
+      </div>
+
+      <p id="planEmptyState" class="empty">Aucune seance planifiee.</p>
+      <div id="plansList" class="list"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
