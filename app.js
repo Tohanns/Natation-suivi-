@@ -172,11 +172,11 @@ function formatPaceValue(minPer100) {
 
 function escapeHtml(value) {
   return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function labelType(type) {
@@ -311,33 +311,35 @@ function validatePlan(plan) {
 }
 
 function normalizeImportedWorkout(raw) {
+  const source = raw || {};
   const candidate = {
-    id: typeof raw?.id === "string" && raw.id.trim() ? raw.id.trim() : uid(),
-    date: typeof raw?.date === "string" ? raw.date : "",
-    type: typeof raw?.type === "string" ? raw.type : "",
-    stroke: typeof raw?.stroke === "string" ? raw.stroke : "crawl",
-    feeling: typeof raw?.feeling === "string" ? raw.feeling : "correct",
-    distance: Number(raw?.distance),
-    duration: Number(raw?.duration),
-    notes: typeof raw?.notes === "string" ? raw.notes.trim() : "",
+    id: typeof source.id === "string" && source.id.trim() ? source.id.trim() : uid(),
+    date: typeof source.date === "string" ? source.date : "",
+    type: typeof source.type === "string" ? source.type : "",
+    stroke: typeof source.stroke === "string" ? source.stroke : "crawl",
+    feeling: typeof source.feeling === "string" ? source.feeling : "correct",
+    distance: Number(source.distance),
+    duration: Number(source.duration),
+    notes: typeof source.notes === "string" ? source.notes.trim() : "",
   };
 
   return validateWorkout(candidate) ? null : candidate;
 }
 
 function normalizeImportedPlan(raw) {
+  const source = raw || {};
   const candidate = {
-    id: typeof raw?.id === "string" && raw.id.trim() ? raw.id.trim() : uid(),
-    date: typeof raw?.date === "string" ? raw.date : "",
-    type: typeof raw?.type === "string" ? raw.type : "",
-    stroke: typeof raw?.stroke === "string" ? raw.stroke : "crawl",
-    targetDistance: Number(raw?.targetDistance),
-    targetDuration: Number(raw?.targetDuration),
-    objective: typeof raw?.objective === "string" ? raw.objective.trim() : "",
-    status: typeof raw?.status === "string" ? raw.status : "todo",
+    id: typeof source.id === "string" && source.id.trim() ? source.id.trim() : uid(),
+    date: typeof source.date === "string" ? source.date : "",
+    type: typeof source.type === "string" ? source.type : "",
+    stroke: typeof source.stroke === "string" ? source.stroke : "crawl",
+    targetDistance: Number(source.targetDistance),
+    targetDuration: Number(source.targetDuration),
+    objective: typeof source.objective === "string" ? source.objective.trim() : "",
+    status: typeof source.status === "string" ? source.status : "todo",
     linkedWorkoutId:
-      typeof raw?.linkedWorkoutId === "string" && raw.linkedWorkoutId.trim()
-        ? raw.linkedWorkoutId.trim()
+      typeof source.linkedWorkoutId === "string" && source.linkedWorkoutId.trim()
+        ? source.linkedWorkoutId.trim()
         : null,
   };
 
@@ -385,9 +387,10 @@ async function fetchRemotePayload() {
 }
 
 function normalizeRemotePayload(data) {
-  const workouts = Array.isArray(data?.workouts) ? data.workouts.map(normalizeImportedWorkout).filter(Boolean) : [];
-  const plans = Array.isArray(data?.plans) ? data.plans.map(normalizeImportedPlan).filter(Boolean) : [];
-  const monthlyGoalCandidate = Math.round(Number(data?.monthly_goal));
+  const source = data || {};
+  const workouts = Array.isArray(source.workouts) ? source.workouts.map(normalizeImportedWorkout).filter(Boolean) : [];
+  const plans = Array.isArray(source.plans) ? source.plans.map(normalizeImportedPlan).filter(Boolean) : [];
+  const monthlyGoalCandidate = Math.round(Number(source.monthly_goal));
   const monthlyGoal = Number.isFinite(monthlyGoalCandidate) && monthlyGoalCandidate > 0 ? monthlyGoalCandidate : 10000;
   return { workouts, plans, monthlyGoal };
 }
@@ -787,7 +790,7 @@ function renderPlans(workouts) {
   const plannedDistance = weekPlans.reduce((acc, p) => acc + Number(p.targetDistance || 0), 0);
   const doneDistance = donePlans.reduce((acc, p) => {
     const linked = workoutsById.get(p.linkedWorkoutId);
-    return acc + Number(linked?.distance || 0);
+    return acc + Number((linked && linked.distance) || 0);
   }, 0);
 
   planWeekPlannedEl.textContent = String(plannedCount);
@@ -851,7 +854,7 @@ function renderPlans(workouts) {
       if (!linkedWorkout) {
         const sameDateType = allWorkouts.find((w) => w.date === p.date && w.type === p.type);
         const sameDate = allWorkouts.find((w) => w.date === p.date);
-        linkedId = sameDateType?.id || sameDate?.id || null;
+        linkedId = (sameDateType && sameDateType.id) || (sameDate && sameDate.id) || null;
         if (!linkedId) {
           showDataMessage("Aucune seance trouvee ce jour pour lier ce plan.", true);
           return;
@@ -1004,7 +1007,7 @@ async function initSupabaseAuth() {
     return;
   }
 
-  currentUserId = session?.user?.id || null;
+  currentUserId = (session && session.user && session.user.id) || null;
   updateAuthUi();
 
   if (currentUserId) {
@@ -1020,7 +1023,7 @@ async function initSupabaseAuth() {
   }
 
   supabaseClient.auth.onAuthStateChange(async (_event, sessionNext) => {
-    currentUserId = sessionNext?.user?.id || null;
+    currentUserId = (sessionNext && sessionNext.user && sessionNext.user.id) || null;
     updateAuthUi();
 
     if (!currentUserId) {
@@ -1162,7 +1165,7 @@ importDataBtn.addEventListener("click", () => {
 });
 
 importDataInput.addEventListener("change", async () => {
-  const file = importDataInput.files?.[0];
+  const file = importDataInput.files && importDataInput.files[0];
   if (!file) return;
 
   try {
@@ -1227,7 +1230,8 @@ importDataInput.addEventListener("change", async () => {
   }
 });
 
-signInBtn?.addEventListener("click", async () => {
+if (signInBtn) {
+  signInBtn.addEventListener("click", async () => {
   if (!supabaseClient) {
     showAuthStatus("Supabase non configure.", true);
     return;
@@ -1246,9 +1250,11 @@ signInBtn?.addEventListener("click", async () => {
     return;
   }
   authPasswordEl.value = "";
-});
+  });
+}
 
-signUpBtn?.addEventListener("click", async () => {
+if (signUpBtn) {
+  signUpBtn.addEventListener("click", async () => {
   if (!supabaseClient) {
     showAuthStatus("Supabase non configure.", true);
     return;
@@ -1269,9 +1275,11 @@ signUpBtn?.addEventListener("click", async () => {
 
   showAuthStatus("Compte cree. Verifie ton email si confirmation activee.");
   authPasswordEl.value = "";
-});
+  });
+}
 
-signOutBtn?.addEventListener("click", async () => {
+if (signOutBtn) {
+  signOutBtn.addEventListener("click", async () => {
   if (!supabaseClient) return;
   const { error } = await supabaseClient.auth.signOut();
   if (error) {
@@ -1279,7 +1287,8 @@ signOutBtn?.addEventListener("click", async () => {
     return;
   }
   showAuthStatus("Deconnecte.");
-});
+  });
+}
 
 window.addEventListener("resize", () => {
   renderActiveChart(loadWorkouts());
