@@ -29,6 +29,9 @@ const planWeekPlannedEl = document.getElementById("planWeekPlanned");
 const planWeekDoneEl = document.getElementById("planWeekDone");
 const planWeekDistanceEl = document.getElementById("planWeekDistance");
 const planWeekDistanceDoneEl = document.getElementById("planWeekDistanceDone");
+const tabSuiviBtn = document.getElementById("tabSuiviBtn");
+const tabPlanBtn = document.getElementById("tabPlanBtn");
+const tabPanels = document.querySelectorAll("[data-panel]");
 const monthChartCanvas = document.getElementById("monthDistanceChart");
 const paceChartCanvas = document.getElementById("paceSessionChart");
 const monthTotalEl = document.getElementById("monthTotal");
@@ -69,6 +72,7 @@ let currentUserId = null;
 let isSyncingRemote = false;
 let hasPendingRemoteSync = false;
 let isApplyingRemoteData = false;
+let currentAppTab = "suivi";
 const GOAL_STORAGE_KEY = "aquapace_monthly_goal";
 const PLAN_STORAGE_KEY = "aquapace_plans";
 const SUPABASE_URL = "https://rhwaamdakfyqdwzuukvr.supabase.co";
@@ -987,6 +991,22 @@ function setDefaultDate() {
   }
 }
 
+function setAppTab(tab) {
+  currentAppTab = tab;
+  if (tabSuiviBtn && tabPlanBtn) {
+    const isSuivi = tab === "suivi";
+    tabSuiviBtn.classList.toggle("active", isSuivi);
+    tabPlanBtn.classList.toggle("active", !isSuivi);
+    tabSuiviBtn.setAttribute("aria-selected", String(isSuivi));
+    tabPlanBtn.setAttribute("aria-selected", String(!isSuivi));
+  }
+
+  for (const panel of tabPanels) {
+    const panelName = panel.getAttribute("data-panel");
+    panel.classList.toggle("hidden", panelName !== tab);
+  }
+}
+
 async function initSupabaseAuth() {
   if (!hasSupabaseConfig()) {
     showAuthStatus("Mode local: configure SUPABASE_URL et SUPABASE_ANON_KEY dans app.js pour activer la synchro.");
@@ -1322,8 +1342,21 @@ paceTabBtn.addEventListener("click", () => {
   renderActiveChart(loadWorkouts());
 });
 
+if (tabSuiviBtn) {
+  tabSuiviBtn.addEventListener("click", () => {
+    setAppTab("suivi");
+  });
+}
+
+if (tabPlanBtn) {
+  tabPlanBtn.addEventListener("click", () => {
+    setAppTab("plan");
+  });
+}
+
 monthlyGoalInput.value = String(loadMonthlyGoal());
 setChartMode("distance");
+setAppTab("suivi");
 setDefaultDate();
 planDateInputEl.value = getTodayIsoLocal();
 form.addEventListener("input", clearFormError);

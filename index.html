@@ -42,7 +42,14 @@
   </header>
 
   <main class="container grid">
-    <section class="card">
+    <section class="app-tabs month-card">
+      <div class="app-tablist" role="tablist" aria-label="Navigation principale">
+        <button type="button" id="tabSuiviBtn" class="app-tab active" role="tab" aria-selected="true">Suivi</button>
+        <button type="button" id="tabPlanBtn" class="app-tab" role="tab" aria-selected="false">Preparation</button>
+      </div>
+    </section>
+
+    <section class="card" data-panel="suivi">
       <h2>Ajouter une seance</h2>
 
       <form id="workoutForm" class="form">
@@ -106,7 +113,7 @@
       </form>
     </section>
 
-    <section class="card">
+    <section class="card" data-panel="suivi">
       <h2>Stats (semaine)</h2>
       <div class="stats" id="stats">
         <div class="stat"><span>Distance</span><strong id="weekDistance">0 m</strong></div>
@@ -137,7 +144,7 @@
 
     </section>
 
-    <section class="card month-card">
+    <section class="card month-card" data-panel="suivi">
       <div class="chart-head">
         <h2 id="chartTitle">Progression distance (mois)</h2>
         <div class="chart-controls">
@@ -169,7 +176,7 @@
       </div>
     </section>
 
-    <section class="card month-card">
+    <section class="card month-card" data-panel="plan">
       <h2>Plan d'entrainement</h2>
 
       <form id="planForm" class="form">
