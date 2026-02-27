@@ -59,6 +59,7 @@ const signUpBtn = document.getElementById("signUpBtn");
 const signOutBtn = document.getElementById("signOutBtn");
 const authStatusEl = document.getElementById("authStatus");
 const syncStatusEl = document.getElementById("syncStatus");
+const authUserBadgeEl = document.getElementById("authUserBadge");
 
 let editingWorkoutId = null;
 let chartMonthOffset = 0;
@@ -230,6 +231,12 @@ function clearDataMessage() {
 
 function showAuthStatus(message, isError = false) {
   if (!authStatusEl) return;
+  if (!isError) {
+    authStatusEl.textContent = "";
+    authStatusEl.classList.add("hidden");
+    authStatusEl.classList.remove("error");
+    return;
+  }
   authStatusEl.textContent = message;
   authStatusEl.classList.remove("hidden");
   authStatusEl.classList.toggle("error", isError);
@@ -237,6 +244,12 @@ function showAuthStatus(message, isError = false) {
 
 function showSyncStatus(message, isError = false) {
   if (!syncStatusEl) return;
+  if (!isError) {
+    syncStatusEl.textContent = "";
+    syncStatusEl.classList.add("hidden");
+    syncStatusEl.classList.remove("error");
+    return;
+  }
   syncStatusEl.textContent = message;
   syncStatusEl.classList.remove("hidden");
   syncStatusEl.classList.toggle("error", isError);
@@ -267,6 +280,9 @@ function updateAuthUi() {
   signUpBtn.classList.toggle("hidden", connected);
   authEmailEl.disabled = connected;
   authPasswordEl.disabled = connected;
+  if (authUserBadgeEl) {
+    authUserBadgeEl.textContent = connected ? "Connecte" : "Local";
+  }
 }
 
 function validateWorkout(w) {

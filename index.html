@@ -14,12 +14,21 @@
         <h1>AquaPace</h1>
         <span class="brand-pill">Suivi natation</span>
       </div>
-      <div class="auth-panel">
-        <input type="email" id="authEmail" placeholder="Email" />
-        <input type="password" id="authPassword" placeholder="Mot de passe" />
-        <button type="button" id="signInBtn" class="btn-secondary">Connexion</button>
-        <button type="button" id="signUpBtn" class="btn-secondary">Creer compte</button>
-        <button type="button" id="signOutBtn" class="btn-secondary hidden">Deconnexion</button>
+      <div class="auth-card">
+        <div class="auth-head">
+          <strong>Synchronisation cloud</strong>
+          <span id="authUserBadge" class="auth-user-badge">Local</span>
+        </div>
+        <div class="auth-panel">
+          <input type="email" id="authEmail" placeholder="Email" />
+          <input type="password" id="authPassword" placeholder="Mot de passe" />
+        </div>
+        <div class="auth-actions">
+          <button type="button" id="signInBtn" class="btn-secondary">Connexion</button>
+          <button type="button" id="signUpBtn" class="btn-secondary">Creer compte</button>
+          <button type="button" id="signOutBtn" class="btn-secondary hidden">Deconnexion</button>
+        </div>
+        <p class="auth-hint">Connecte-toi pour retrouver tes donnees sur PC et mobile.</p>
       </div>
       <div class="data-actions global-data-actions">
         <button type="button" id="exportDataBtn" class="btn-secondary">Exporter</button>

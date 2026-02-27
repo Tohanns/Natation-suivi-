@@ -68,16 +68,55 @@ body::before{
   flex-wrap:wrap;
 }
 
-.auth-panel{
-  display:flex;
+.auth-card{
+  display:grid;
   gap:8px;
-  flex-wrap:wrap;
+  padding:10px 12px;
+  border-radius:14px;
+  border:1px solid var(--border);
+  background:rgba(255,255,255,.68);
+  box-shadow:0 8px 22px rgba(107,68,44,.08);
+  min-width:320px;
+}
+
+.auth-head{
+  display:flex;
   align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  color:var(--text);
+  font-size:14px;
+}
+
+.auth-user-badge{
+  border:1px solid var(--border);
+  border-radius:999px;
+  padding:3px 8px;
+  font-size:12px;
+  color:var(--muted);
+  background:#fff;
+}
+
+.auth-panel{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:8px;
 }
 
 .auth-panel input{
-  width:auto;
-  min-width:150px;
+  min-width:0;
+}
+
+.auth-actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
+.auth-hint{
+  margin:0;
+  color:var(--muted);
+  font-size:12px;
 }
 
 .brand{
@@ -264,12 +303,13 @@ button{
 }
 
 @media (max-width: 700px){
-  .auth-panel{
+  .auth-card{
     width:100%;
+    min-width:0;
   }
 
-  .auth-panel input{
-    flex:1 1 150px;
+  .auth-panel{
+    grid-template-columns: 1fr;
   }
 
   .global-data-actions{
