@@ -36,6 +36,7 @@ body{
   color:var(--text);
   min-height:100vh;
   position:relative;
+  overflow-x:hidden;
 }
 
 body::before{
@@ -239,6 +240,7 @@ header p{
   padding:18px;
   box-shadow:var(--shadow);
   backdrop-filter: blur(2px);
+  overflow-x:hidden;
 }
 .card > h2{
   margin:0 0 14px;
@@ -276,6 +278,7 @@ header p{
 .form{
   display:grid;
   gap:12px;
+  min-width:0;
 }
 
 .form-error{
@@ -293,17 +296,27 @@ label{
   gap:6px;
   color:var(--muted);
   font-size:14px;
+  min-width:0;
 }
 
 input, select, textarea{
   width:100%;
   min-width:0;
+  max-width:100%;
   padding:10px 12px;
   border-radius:12px;
   border:1px solid var(--border);
   background:var(--surface);
   color:var(--text);
   outline:none;
+}
+
+input[type="date"]{
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  -webkit-appearance:none;
+  appearance:none;
 }
 
 input:focus-visible, select:focus-visible, textarea:focus-visible{
