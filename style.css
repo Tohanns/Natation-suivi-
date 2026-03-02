@@ -122,6 +122,21 @@ body::before{
   font-size:12px;
 }
 
+.role-panel{
+  display:grid;
+  grid-template-columns: auto 1fr auto;
+  align-items:end;
+  gap:8px;
+}
+
+.role-panel label{
+  font-size:12px;
+}
+
+.role-panel select{
+  min-width:130px;
+}
+
 .brand{
   display:inline-flex;
   align-items:center;

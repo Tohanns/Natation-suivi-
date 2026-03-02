@@ -63,6 +63,18 @@ const signOutBtn = document.getElementById("signOutBtn");
 const authStatusEl = document.getElementById("authStatus");
 const syncStatusEl = document.getElementById("syncStatus");
 const authUserBadgeEl = document.getElementById("authUserBadge");
+const rolePanelEl = document.getElementById("rolePanel");
+const userRoleSelectEl = document.getElementById("userRoleSelect");
+const saveRoleBtn = document.getElementById("saveRoleBtn");
+const planAssigneeWrapEl = document.getElementById("planAssigneeWrap");
+const planAssigneeEl = document.getElementById("planAssignee");
+const planRoleHintEl = document.getElementById("planRoleHint");
+const assignedPlansBlockEl = document.getElementById("assignedPlansBlock");
+const assignedPlansListEl = document.getElementById("assignedPlansList");
+const assignedPlansEmptyEl = document.getElementById("assignedPlansEmpty");
+const coachSentPlansBlockEl = document.getElementById("coachSentPlansBlock");
+const coachSentPlansListEl = document.getElementById("coachSentPlansList");
+const coachSentPlansEmptyEl = document.getElementById("coachSentPlansEmpty");
 
 let editingWorkoutId = null;
 let chartMonthOffset = 0;
@@ -73,15 +85,22 @@ let isSyncingRemote = false;
 let hasPendingRemoteSync = false;
 let isApplyingRemoteData = false;
 let currentAppTab = "suivi";
+let currentUserRole = "swimmer";
+let coachSwimmers = [];
+let assignedPlans = [];
+let coachSentPlans = [];
 const GOAL_STORAGE_KEY = "aquapace_monthly_goal";
 const PLAN_STORAGE_KEY = "aquapace_plans";
 const SUPABASE_URL = "https://rhwaamdakfyqdwzuukvr.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_a86EdlugjJIn9CB5zhyFEg_dL7a7pXS";
 const SUPABASE_TABLE = "aquapace_user_data";
+const PROFILE_TABLE = "aquapace_profiles";
+const SHARED_PLAN_TABLE = "aquapace_shared_plans";
 const ALLOWED_TYPES = new Set(["technique", "endurance", "sprint", "mixte"]);
 const ALLOWED_STROKES = new Set(["crawl", "dos", "brasse", "papillon", "mixte"]);
 const ALLOWED_FEELINGS = new Set(["facile", "correct", "difficile", "epuisant"]);
 const ALLOWED_PLAN_STATUS = new Set(["todo", "done", "missed"]);
+const ALLOWED_ROLES = new Set(["coach", "swimmer"]);
 
 function loadWorkouts() {
   try {
@@ -266,6 +285,326 @@ function clearSyncStatus() {
   syncStatusEl.classList.remove("error");
 }
 
+function normalizeRole(role) {
+  return ALLOWED_ROLES.has(role) ? role : "swimmer";
+}
+
+function getSwimmerLabel(swimmerId) {
+  const swimmer = coachSwimmers.find((x) => x.id === swimmerId);
+  if (swimmer && swimmer.email) return swimmer.email;
+  if (!swimmerId) return "Moi";
+  if (swimmerId === currentUserId) return "Moi";
+  return swimmerId.slice(0, 8);
+}
+
+function renderPlanAssigneeOptions() {
+  if (!planAssigneeEl) return;
+  const swimmers = coachSwimmers.slice().sort((a, b) => a.email.localeCompare(b.email));
+  const options = swimmers
+    .map((s) => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.email)}</option>`)
+    .join("");
+  planAssigneeEl.innerHTML = `<option value="${escapeHtml(currentUserId || "")}">Moi</option>${options}`;
+}
+
+function updateRoleUi() {
+  const connected = Boolean(currentUserId);
+  if (rolePanelEl) {
+    rolePanelEl.classList.toggle("hidden", !connected);
+  }
+  if (userRoleSelectEl) {
+    userRoleSelectEl.value = normalizeRole(currentUserRole);
+    userRoleSelectEl.disabled = !connected;
+  }
+
+  const isCoach = connected && currentUserRole === "coach";
+  const isSwimmer = connected && currentUserRole === "swimmer";
+
+  if (planAssigneeWrapEl) {
+    planAssigneeWrapEl.classList.toggle("hidden", !isCoach);
+  }
+  if (planRoleHintEl) {
+    planRoleHintEl.classList.toggle("hidden", !connected);
+    planRoleHintEl.textContent = isCoach
+      ? "Mode coach: tu peux assigner une seance a un nageur."
+      : "Mode nageur: tu enregistres tes seances et consultes tes plans recus.";
+  }
+  if (assignedPlansBlockEl) {
+    assignedPlansBlockEl.classList.toggle("hidden", !isSwimmer);
+  }
+  if (coachSentPlansBlockEl) {
+    coachSentPlansBlockEl.classList.toggle("hidden", !isCoach);
+  }
+}
+
+function renderAssignedPlans() {
+  if (!assignedPlansListEl || !assignedPlansEmptyEl) return;
+
+  assignedPlansListEl.innerHTML = "";
+  if (!assignedPlans.length) {
+    assignedPlansEmptyEl.classList.remove("hidden");
+    return;
+  }
+
+  assignedPlansEmptyEl.classList.add("hidden");
+
+  for (const p of assignedPlans) {
+    const statusClass =
+      p.status === "done" ? "badge-status-done" : p.status === "missed" ? "badge-status-missed" : "badge-status-todo";
+    const statusLabel = p.status === "done" ? "Fait" : p.status === "missed" ? "Rate" : "A faire";
+    const item = document.createElement("div");
+    item.className = "item";
+    item.innerHTML = `
+      <div>
+        <h3>${formatDateFR(p.date)} - Cible ${p.targetDistance} m / ${p.targetDuration} min</h3>
+        <p>${p.objective ? escapeHtml(p.objective) : ""}</p>
+        <div class="badges">
+          <span class="badge">${escapeHtml(labelType(p.type))}</span>
+          <span class="badge">${escapeHtml(labelType(p.stroke))}</span>
+          <span class="badge ${statusClass}">${statusLabel}</span>
+        </div>
+      </div>
+    `;
+    const actions = document.createElement("div");
+    actions.className = "item-actions";
+
+    const doneBtn = document.createElement("button");
+    doneBtn.type = "button";
+    doneBtn.className = "btn-secondary";
+    doneBtn.textContent = "Marquer fait";
+    doneBtn.disabled = p.status === "done";
+    doneBtn.addEventListener("click", async () => {
+      try {
+        await updateSharedPlanStatus(p.sharedPlanId, "done");
+        await fetchAssignedPlans();
+        render();
+      } catch {
+        showDataMessage("Impossible de mettre a jour le statut du plan.", true);
+      }
+    });
+
+    const missedBtn = document.createElement("button");
+    missedBtn.type = "button";
+    missedBtn.className = "btn-secondary";
+    missedBtn.textContent = "Marquer rate";
+    missedBtn.disabled = p.status === "missed";
+    missedBtn.addEventListener("click", async () => {
+      try {
+        await updateSharedPlanStatus(p.sharedPlanId, "missed");
+        await fetchAssignedPlans();
+        render();
+      } catch {
+        showDataMessage("Impossible de mettre a jour le statut du plan.", true);
+      }
+    });
+
+    actions.appendChild(doneBtn);
+    actions.appendChild(missedBtn);
+    item.appendChild(actions);
+    assignedPlansListEl.appendChild(item);
+  }
+}
+
+function renderCoachSentPlans() {
+  if (!coachSentPlansListEl || !coachSentPlansEmptyEl) return;
+
+  coachSentPlansListEl.innerHTML = "";
+  if (!coachSentPlans.length) {
+    coachSentPlansEmptyEl.classList.remove("hidden");
+    return;
+  }
+  coachSentPlansEmptyEl.classList.add("hidden");
+
+  for (const p of coachSentPlans) {
+    const statusClass =
+      p.status === "done" ? "badge-status-done" : p.status === "missed" ? "badge-status-missed" : "badge-status-todo";
+    const statusLabel = p.status === "done" ? "Fait" : p.status === "missed" ? "Rate" : "A faire";
+    const item = document.createElement("div");
+    item.className = "item";
+    item.innerHTML = `
+      <div>
+        <h3>${formatDateFR(p.date)} - ${escapeHtml(getSwimmerLabel(p.assignedToUserId))}</h3>
+        <p>${p.objective ? escapeHtml(p.objective) : ""}</p>
+        <div class="badges">
+          <span class="badge">${escapeHtml(labelType(p.type))}</span>
+          <span class="badge">${escapeHtml(labelType(p.stroke))}</span>
+          <span class="badge ${statusClass}">${statusLabel}</span>
+        </div>
+      </div>
+    `;
+    coachSentPlansListEl.appendChild(item);
+  }
+}
+
+async function saveCurrentUserRole(role) {
+  if (!supabaseClient || !currentUserId) return;
+  const normalized = normalizeRole(role);
+  const payload = {
+    id: currentUserId,
+    email: authEmailEl && authEmailEl.value ? authEmailEl.value.trim() : null,
+    role: normalized,
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await supabaseClient.from(PROFILE_TABLE).upsert(payload, { onConflict: "id" });
+  if (error) throw error;
+}
+
+async function loadCurrentUserRole(sessionUser) {
+  if (!supabaseClient || !currentUserId) {
+    currentUserRole = "swimmer";
+    return;
+  }
+
+  const { data, error } = await supabaseClient
+    .from(PROFILE_TABLE)
+    .select("id, role, email")
+    .eq("id", currentUserId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  if (!data) {
+    const payload = {
+      id: currentUserId,
+      email: (sessionUser && sessionUser.email) || null,
+      role: "swimmer",
+      updated_at: new Date().toISOString(),
+    };
+    const { error: upsertError } = await supabaseClient.from(PROFILE_TABLE).upsert(payload, { onConflict: "id" });
+    if (upsertError) throw upsertError;
+    currentUserRole = "swimmer";
+    return;
+  }
+
+  currentUserRole = normalizeRole(data.role);
+  if (sessionUser && sessionUser.email && sessionUser.email !== data.email) {
+    await supabaseClient
+      .from(PROFILE_TABLE)
+      .upsert({ id: currentUserId, email: sessionUser.email, role: currentUserRole }, { onConflict: "id" });
+  }
+}
+
+async function loadCoachSwimmers() {
+  coachSwimmers = [];
+  if (!supabaseClient || !currentUserId || currentUserRole !== "coach") {
+    renderPlanAssigneeOptions();
+    return;
+  }
+
+  const { data, error } = await supabaseClient
+    .from(PROFILE_TABLE)
+    .select("id, email")
+    .eq("role", "swimmer")
+    .neq("id", currentUserId)
+    .order("email", { ascending: true });
+
+  if (error) throw error;
+
+  coachSwimmers = (data || [])
+    .filter((x) => typeof x.id === "string" && typeof x.email === "string")
+    .map((x) => ({ id: x.id, email: x.email }));
+  renderPlanAssigneeOptions();
+}
+
+function mapSharedPlanRowToPlan(row) {
+  return {
+    id: typeof row.id === "string" && row.id ? row.id : uid(),
+    date: typeof row.date === "string" ? row.date : "",
+    type: typeof row.type === "string" ? row.type : "mixte",
+    stroke: typeof row.stroke === "string" ? row.stroke : "mixte",
+    targetDistance: Number(row.target_distance),
+    targetDuration: Number(row.target_duration),
+    objective: typeof row.objective === "string" ? row.objective : "",
+    status: typeof row.status === "string" ? row.status : "todo",
+    linkedWorkoutId:
+      typeof row.linked_workout_id === "string" && row.linked_workout_id.trim()
+        ? row.linked_workout_id.trim()
+        : null,
+    assignedToUserId:
+      typeof row.swimmer_id === "string" && row.swimmer_id.trim() ? row.swimmer_id.trim() : currentUserId,
+    createdByCoachId:
+      typeof row.coach_id === "string" && row.coach_id.trim() ? row.coach_id.trim() : null,
+    sharedPlanId: typeof row.id === "string" ? row.id : null,
+  };
+}
+
+async function fetchAssignedPlans() {
+  assignedPlans = [];
+  if (!supabaseClient || !currentUserId || currentUserRole !== "swimmer") {
+    renderAssignedPlans();
+    return;
+  }
+
+  const { data, error } = await supabaseClient
+    .from(SHARED_PLAN_TABLE)
+    .select("id, coach_id, swimmer_id, date, type, stroke, target_distance, target_duration, objective, status, linked_workout_id")
+    .eq("swimmer_id", currentUserId)
+    .order("date", { ascending: false });
+
+  if (error) throw error;
+  assignedPlans = (data || []).map(mapSharedPlanRowToPlan).filter((x) => !validatePlan(x));
+  renderAssignedPlans();
+}
+
+async function fetchCoachSentPlans() {
+  coachSentPlans = [];
+  if (!supabaseClient || !currentUserId || currentUserRole !== "coach") {
+    renderCoachSentPlans();
+    return;
+  }
+
+  const { data, error } = await supabaseClient
+    .from(SHARED_PLAN_TABLE)
+    .select("id, coach_id, swimmer_id, date, type, stroke, target_distance, target_duration, objective, status, linked_workout_id")
+    .eq("coach_id", currentUserId)
+    .order("date", { ascending: false });
+
+  if (error) throw error;
+  coachSentPlans = (data || []).map(mapSharedPlanRowToPlan).filter((x) => !validatePlan(x));
+  renderCoachSentPlans();
+}
+
+async function updateSharedPlanStatus(sharedPlanId, status) {
+  if (!supabaseClient || !currentUserId || !sharedPlanId) return;
+  const nextStatus = ALLOWED_PLAN_STATUS.has(status) ? status : "todo";
+  const { error } = await supabaseClient
+    .from(SHARED_PLAN_TABLE)
+    .update({ status: nextStatus })
+    .eq("id", sharedPlanId);
+  if (error) throw error;
+}
+
+async function autoCompleteSharedPlanWithWorkout(workout) {
+  if (!supabaseClient || !currentUserId || currentUserRole !== "swimmer") return;
+  const candidate = assignedPlans.find(
+    (p) => p.sharedPlanId && p.status === "todo" && p.date === workout.date
+  );
+  if (!candidate) return;
+
+  const { error } = await supabaseClient
+    .from(SHARED_PLAN_TABLE)
+    .update({ status: "done", linked_workout_id: workout.id })
+    .eq("id", candidate.sharedPlanId);
+  if (error) throw error;
+}
+
+async function createSharedPlan(plan, swimmerId) {
+  if (!supabaseClient || !currentUserId) return;
+  const payload = {
+    coach_id: currentUserId,
+    swimmer_id: swimmerId,
+    date: plan.date,
+    type: plan.type,
+    stroke: plan.stroke,
+    target_distance: plan.targetDistance,
+    target_duration: plan.targetDuration,
+    objective: plan.objective || null,
+    status: "todo",
+    linked_workout_id: null,
+  };
+  const { error } = await supabaseClient.from(SHARED_PLAN_TABLE).insert(payload);
+  if (error) throw error;
+}
+
 function hasSupabaseConfig() {
   return (
     typeof window.supabase !== "undefined" &&
@@ -285,8 +624,9 @@ function updateAuthUi() {
   authEmailEl.disabled = connected;
   authPasswordEl.disabled = connected;
   if (authUserBadgeEl) {
-    authUserBadgeEl.textContent = connected ? "Connecte" : "Local";
+    authUserBadgeEl.textContent = connected ? `Connecte (${currentUserRole})` : "Local";
   }
+  updateRoleUi();
 }
 
 function validateWorkout(w) {
@@ -345,6 +685,16 @@ function normalizeImportedPlan(raw) {
       typeof source.linkedWorkoutId === "string" && source.linkedWorkoutId.trim()
         ? source.linkedWorkoutId.trim()
         : null,
+    assignedToUserId:
+      typeof source.assignedToUserId === "string" && source.assignedToUserId.trim()
+        ? source.assignedToUserId.trim()
+        : currentUserId,
+    createdByCoachId:
+      typeof source.createdByCoachId === "string" && source.createdByCoachId.trim()
+        ? source.createdByCoachId.trim()
+        : null,
+    sharedPlanId:
+      typeof source.sharedPlanId === "string" && source.sharedPlanId.trim() ? source.sharedPlanId.trim() : null,
   };
 
   return validatePlan(candidate) ? null : candidate;
@@ -785,7 +1135,14 @@ function getFilteredWorkouts(workouts) {
 }
 
 function renderPlans(workouts) {
-  const plans = loadPlans().sort((a, b) => (a.date < b.date ? 1 : -1));
+  const allPlans = loadPlans();
+  const plans = allPlans
+    .filter((p) => {
+      if (!p.assignedToUserId) return true;
+      if (currentUserRole === "coach") return true;
+      return p.assignedToUserId === currentUserId;
+    })
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
   const workoutsById = new Map(workouts.map((w) => [w.id, w]));
   const weekPlans = plans.filter((p) => isInCurrentWeek(p.date));
 
@@ -820,6 +1177,9 @@ function renderPlans(workouts) {
     item.className = "item";
 
     const left = document.createElement("div");
+    const assigneeText = p.assignedToUserId && p.assignedToUserId !== currentUserId
+      ? `<span class="badge">Pour: ${escapeHtml(getSwimmerLabel(p.assignedToUserId))}</span>`
+      : "";
     left.innerHTML = `
       <h3>${formatDateFR(p.date)} - Cible ${p.targetDistance} m / ${p.targetDuration} min</h3>
       <p>${p.objective ? escapeHtml(p.objective) : ""}</p>
@@ -827,6 +1187,7 @@ function renderPlans(workouts) {
         <span class="badge">${escapeHtml(labelType(p.type))}</span>
         <span class="badge">${escapeHtml(labelType(p.stroke))}</span>
         <span class="badge ${statusClass}">${statusLabel}</span>
+        ${assigneeText}
       </div>
       ${linkedWorkout ? `<p>Lie a: ${linkedWorkout.distance} m / ${linkedWorkout.duration} min</p>` : ""}
     `;
@@ -834,58 +1195,64 @@ function renderPlans(workouts) {
     const actions = document.createElement("div");
     actions.className = "item-actions";
 
-    const toggleMissedBtn = document.createElement("button");
-    toggleMissedBtn.className = "btn-secondary";
-    toggleMissedBtn.type = "button";
-    toggleMissedBtn.textContent = status === "missed" ? "Remettre a faire" : "Marquer rate";
-    toggleMissedBtn.addEventListener("click", () => {
-      const next = loadPlans().map((x) =>
-        x.id === p.id ? { ...x, status: x.status === "missed" ? "todo" : "missed", linkedWorkoutId: null } : x
-      );
-      savePlans(next);
-      render();
-    });
+    const canEditPlan = !p.assignedToUserId || p.assignedToUserId === currentUserId;
+    if (canEditPlan) {
+      const toggleMissedBtn = document.createElement("button");
+      toggleMissedBtn.className = "btn-secondary";
+      toggleMissedBtn.type = "button";
+      toggleMissedBtn.textContent = status === "missed" ? "Remettre a faire" : "Marquer rate";
+      toggleMissedBtn.addEventListener("click", () => {
+        const next = loadPlans().map((x) =>
+          x.id === p.id ? { ...x, status: x.status === "missed" ? "todo" : "missed", linkedWorkoutId: null } : x
+        );
+        savePlans(next);
+        render();
+      });
+      actions.appendChild(toggleMissedBtn);
+    }
 
-    const linkBtn = document.createElement("button");
-    linkBtn.className = "btn-secondary";
-    linkBtn.type = "button";
-    linkBtn.textContent = linkedWorkout ? "Detacher" : "Lier a une seance";
-    linkBtn.addEventListener("click", () => {
-      const currentPlans = loadPlans();
-      const allWorkouts = loadWorkouts();
-      let linkedId = null;
+    if (canEditPlan) {
+      const linkBtn = document.createElement("button");
+      linkBtn.className = "btn-secondary";
+      linkBtn.type = "button";
+      linkBtn.textContent = linkedWorkout ? "Detacher" : "Lier a une seance";
+      linkBtn.addEventListener("click", () => {
+        const currentPlans = loadPlans();
+        const allWorkouts = loadWorkouts();
+        let linkedId = null;
 
-      if (!linkedWorkout) {
-        const sameDateType = allWorkouts.find((w) => w.date === p.date && w.type === p.type);
-        const sameDate = allWorkouts.find((w) => w.date === p.date);
-        linkedId = (sameDateType && sameDateType.id) || (sameDate && sameDate.id) || null;
-        if (!linkedId) {
-          showDataMessage("Aucune seance trouvee ce jour pour lier ce plan.", true);
-          return;
+        if (!linkedWorkout) {
+          const sameDateType = allWorkouts.find((w) => w.date === p.date && w.type === p.type);
+          const sameDate = allWorkouts.find((w) => w.date === p.date);
+          linkedId = (sameDateType && sameDateType.id) || (sameDate && sameDate.id) || null;
+          if (!linkedId) {
+            showDataMessage("Aucune seance trouvee ce jour pour lier ce plan.", true);
+            return;
+          }
         }
-      }
 
-      const next = currentPlans.map((x) =>
-        x.id === p.id ? { ...x, linkedWorkoutId: linkedWorkout ? null : linkedId, status: "todo" } : x
-      );
-      savePlans(next);
-      render();
-    });
+        const next = currentPlans.map((x) =>
+          x.id === p.id ? { ...x, linkedWorkoutId: linkedWorkout ? null : linkedId, status: "todo" } : x
+        );
+        savePlans(next);
+        render();
+      });
+      actions.appendChild(linkBtn);
+    }
 
-    const delBtn = document.createElement("button");
-    delBtn.className = "delete";
-    delBtn.type = "button";
-    delBtn.textContent = "Supprimer";
-    delBtn.addEventListener("click", () => {
-      const ok = window.confirm("Supprimer cette seance planifiee ?");
-      if (!ok) return;
-      savePlans(loadPlans().filter((x) => x.id !== p.id));
-      render();
-    });
-
-    actions.appendChild(toggleMissedBtn);
-    actions.appendChild(linkBtn);
-    actions.appendChild(delBtn);
+    if (canEditPlan) {
+      const delBtn = document.createElement("button");
+      delBtn.className = "delete";
+      delBtn.type = "button";
+      delBtn.textContent = "Supprimer";
+      delBtn.addEventListener("click", () => {
+        const ok = window.confirm("Supprimer cette seance planifiee ?");
+        if (!ok) return;
+        savePlans(loadPlans().filter((x) => x.id !== p.id));
+        render();
+      });
+      actions.appendChild(delBtn);
+    }
 
     item.appendChild(left);
     item.appendChild(actions);
@@ -981,6 +1348,8 @@ function render() {
   weekPaceRecordEl.textContent = formatPaceValue(getWeeklyPaceRecord(week));
 
   renderPlans(workouts);
+  renderAssignedPlans();
+  renderCoachSentPlans();
   renderActiveChart(workouts);
 }
 
@@ -1010,6 +1379,7 @@ function setAppTab(tab) {
 async function initSupabaseAuth() {
   if (!hasSupabaseConfig()) {
     showAuthStatus("Mode local: configure SUPABASE_URL et SUPABASE_ANON_KEY dans app.js pour activer la synchro.");
+    currentUserRole = "swimmer";
     updateAuthUi();
     return;
   }
@@ -1028,12 +1398,18 @@ async function initSupabaseAuth() {
   }
 
   currentUserId = (session && session.user && session.user.id) || null;
+  currentUserRole = "swimmer";
   updateAuthUi();
 
   if (currentUserId) {
     showAuthStatus(`Connecte: ${session.user.email || "compte Supabase"}`);
     try {
       await pullRemoteDataToLocal();
+      await loadCurrentUserRole(session.user);
+      await loadCoachSwimmers();
+      await fetchAssignedPlans();
+      await fetchCoachSentPlans();
+      updateAuthUi();
       render();
     } catch {
       showSyncStatus("Impossible de recuperer les donnees Supabase.", true);
@@ -1044,17 +1420,27 @@ async function initSupabaseAuth() {
 
   supabaseClient.auth.onAuthStateChange(async (_event, sessionNext) => {
     currentUserId = (sessionNext && sessionNext.user && sessionNext.user.id) || null;
+    currentUserRole = "swimmer";
     updateAuthUi();
 
     if (!currentUserId) {
+      assignedPlans = [];
+      coachSwimmers = [];
+      coachSentPlans = [];
       clearSyncStatus();
       showAuthStatus("Non connecte: donnees en local uniquement.");
+      render();
       return;
     }
 
     showAuthStatus(`Connecte: ${sessionNext.user.email || "compte Supabase"}`);
     try {
       await pullRemoteDataToLocal();
+      await loadCurrentUserRole(sessionNext.user);
+      await loadCoachSwimmers();
+      await fetchAssignedPlans();
+      await fetchCoachSentPlans();
+      updateAuthUi();
       render();
     } catch {
       showSyncStatus("Impossible de recuperer les donnees Supabase.", true);
@@ -1062,7 +1448,7 @@ async function initSupabaseAuth() {
   });
 }
 
-form.addEventListener("submit", (e) => {
+form.addEventListener("submit", async (e) => {
   e.preventDefault();
 
   const w = {
@@ -1098,6 +1484,9 @@ form.addEventListener("submit", (e) => {
   saveWorkouts(workouts);
   if (!editingWorkoutId) {
     savePlans(autoLinkPlanWithWorkout(w, loadPlans()));
+    await autoCompleteSharedPlanWithWorkout(w).catch(() => {});
+    await fetchAssignedPlans().catch(() => {});
+    await fetchCoachSentPlans().catch(() => {});
   }
 
   form.reset();
@@ -1106,9 +1495,11 @@ form.addEventListener("submit", (e) => {
   render();
 });
 
-planFormEl.addEventListener("submit", (e) => {
+planFormEl.addEventListener("submit", async (e) => {
   e.preventDefault();
 
+  const assignedToUserId =
+    currentUserRole === "coach" && planAssigneeEl && planAssigneeEl.value ? planAssigneeEl.value : currentUserId;
   const plan = {
     id: uid(),
     date: planDateInputEl.value,
@@ -1119,6 +1510,9 @@ planFormEl.addEventListener("submit", (e) => {
     objective: planObjectiveInputEl.value.trim(),
     status: "todo",
     linkedWorkoutId: null,
+    assignedToUserId,
+    createdByCoachId: currentUserRole === "coach" ? currentUserId : null,
+    sharedPlanId: null,
   };
 
   const validationError = validatePlan(plan);
@@ -1128,11 +1522,33 @@ planFormEl.addEventListener("submit", (e) => {
   }
 
   clearPlanError();
-  savePlans([...loadPlans(), plan]);
-  planFormEl.reset();
-  if (!planDateInputEl.value) {
-    planDateInputEl.value = getTodayIsoLocal();
+  if (currentUserRole === "coach" && assignedToUserId && assignedToUserId !== currentUserId) {
+    if (!supabaseClient || !currentUserId) {
+      showPlanError("Connecte-toi pour assigner un plan a un nageur.");
+      return;
+    }
+    try {
+      await createSharedPlan(plan, assignedToUserId);
+      showDataMessage(`Plan assigne a ${getSwimmerLabel(assignedToUserId)}.`);
+      await fetchCoachSentPlans();
+    } catch {
+      showPlanError(
+        "Impossible d'assigner le plan (verifie les tables Supabase aquapace_profiles et aquapace_shared_plans)."
+      );
+      return;
+    }
+  } else {
+    savePlans([...loadPlans(), plan]);
   }
+
+  planFormEl.reset();
+  planDateInputEl.value = getTodayIsoLocal();
+  if (planAssigneeEl) {
+    planAssigneeEl.value = currentUserId || "";
+  }
+  clearPlanError();
+  await fetchAssignedPlans().catch(() => {});
+  await fetchCoachSentPlans().catch(() => {});
   render();
 });
 
@@ -1310,6 +1726,28 @@ if (signOutBtn) {
   });
 }
 
+if (saveRoleBtn) {
+  saveRoleBtn.addEventListener("click", async () => {
+    if (!currentUserId || !supabaseClient) {
+      showAuthStatus("Connecte-toi pour modifier ton role.", true);
+      return;
+    }
+    const nextRole = normalizeRole((userRoleSelectEl && userRoleSelectEl.value) || "swimmer");
+    try {
+      await saveCurrentUserRole(nextRole);
+      currentUserRole = nextRole;
+      await loadCoachSwimmers();
+      await fetchAssignedPlans();
+      await fetchCoachSentPlans();
+      updateAuthUi();
+      render();
+      showAuthStatus(`Role enregistre: ${nextRole}.`);
+    } catch {
+      showAuthStatus("Impossible d'enregistrer le role (verifie la table aquapace_profiles).", true);
+    }
+  });
+}
+
 window.addEventListener("resize", () => {
   renderActiveChart(loadWorkouts());
 });
@@ -1359,6 +1797,8 @@ setChartMode("distance");
 setAppTab("suivi");
 setDefaultDate();
 planDateInputEl.value = getTodayIsoLocal();
+renderPlanAssigneeOptions();
+updateRoleUi();
 form.addEventListener("input", clearFormError);
 planFormEl.addEventListener("input", clearPlanError);
 form.addEventListener("input", clearDataMessage);

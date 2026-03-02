@@ -28,6 +28,14 @@
           <button type="button" id="signUpBtn" class="btn-secondary">Creer compte</button>
           <button type="button" id="signOutBtn" class="btn-secondary hidden">Deconnexion</button>
         </div>
+        <div id="rolePanel" class="role-panel hidden">
+          <label for="userRoleSelect">Role</label>
+          <select id="userRoleSelect">
+            <option value="swimmer">Nageur</option>
+            <option value="coach">Coach</option>
+          </select>
+          <button type="button" id="saveRoleBtn" class="btn-secondary">Enregistrer role</button>
+        </div>
         <p class="auth-hint">Connecte-toi pour retrouver tes donnees sur PC et mobile.</p>
       </div>
       <div class="data-actions global-data-actions">
@@ -220,6 +228,12 @@
           Objectif de seance
           <input type="text" id="planObjective" maxlength="120" placeholder="ex: travail d'allure 200m" />
         </label>
+        <label id="planAssigneeWrap" class="hidden">
+          Nageur cible
+          <select id="planAssignee"></select>
+        </label>
+
+        <p id="planRoleHint" class="auth-hint hidden"></p>
 
         <p id="planError" class="form-error hidden" role="alert" aria-live="polite"></p>
 
@@ -237,6 +251,16 @@
 
       <p id="planEmptyState" class="empty">Aucune seance planifiee.</p>
       <div id="plansList" class="list"></div>
+      <div id="assignedPlansBlock" class="hidden">
+        <h2>Plans recus</h2>
+        <p id="assignedPlansEmpty" class="empty">Aucun plan assigne.</p>
+        <div id="assignedPlansList" class="list"></div>
+      </div>
+      <div id="coachSentPlansBlock" class="hidden">
+        <h2>Plans envoyes</h2>
+        <p id="coachSentPlansEmpty" class="empty">Aucun plan envoye.</p>
+        <div id="coachSentPlansList" class="list"></div>
+      </div>
     </section>
   </main>
 
