@@ -51,9 +51,6 @@ const weekTimeEl = document.getElementById("weekTime");
 const weekPaceEl = document.getElementById("weekPace");
 const weekSessionsEl = document.getElementById("weekSessions");
 const weekPaceRecordEl = document.getElementById("weekPaceRecord");
-const exportDataBtn = document.getElementById("exportDataBtn");
-const importDataBtn = document.getElementById("importDataBtn");
-const importDataInput = document.getElementById("importDataInput");
 const dataMessageEl = document.getElementById("dataMessage");
 const authEmailEl = document.getElementById("authEmail");
 const authPasswordEl = document.getElementById("authPassword");
@@ -63,6 +60,9 @@ const signOutBtn = document.getElementById("signOutBtn");
 const authStatusEl = document.getElementById("authStatus");
 const syncStatusEl = document.getElementById("syncStatus");
 const authUserBadgeEl = document.getElementById("authUserBadge");
+const authModalEl = document.getElementById("authModal");
+const openAuthModalBtn = document.getElementById("openAuthModalBtn");
+const closeAuthModalBtn = document.getElementById("closeAuthModalBtn");
 const rolePanelEl = document.getElementById("rolePanel");
 const userRoleSelectEl = document.getElementById("userRoleSelect");
 const saveRoleBtn = document.getElementById("saveRoleBtn");
@@ -89,6 +89,9 @@ let currentUserRole = "swimmer";
 let coachSwimmers = [];
 let assignedPlans = [];
 let coachSentPlans = [];
+let isAuthModalOpen = false;
+let expandedWeekKeys = new Set();
+let hasInitializedWeekExpansion = false;
 const GOAL_STORAGE_KEY = "aquapace_monthly_goal";
 const PLAN_STORAGE_KEY = "aquapace_plans";
 const SUPABASE_URL = "https://rhwaamdakfyqdwzuukvr.supabase.co";
@@ -212,6 +215,29 @@ function getTodayIsoLocal() {
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function toIsoDateLocal(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getWeekKeyFromIsoDate(isoDate) {
+  const start = startOfWeekMonday(dateFromIso(isoDate));
+  return toIsoDateLocal(start);
+}
+
+function getCurrentWeekKey() {
+  return toIsoDateLocal(startOfWeekMonday(new Date()));
+}
+
+function getWeekLabelFromKey(weekKey) {
+  const start = dateFromIso(weekKey);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  return `Semaine du ${start.toLocaleDateString("fr-FR")} au ${end.toLocaleDateString("fr-FR")}`;
 }
 
 function showFormError(message) {
@@ -623,10 +649,20 @@ function updateAuthUi() {
   signUpBtn.classList.toggle("hidden", connected);
   authEmailEl.disabled = connected;
   authPasswordEl.disabled = connected;
+  if (openAuthModalBtn) {
+    openAuthModalBtn.textContent = connected ? "Mon compte" : "Connexion";
+  }
   if (authUserBadgeEl) {
     authUserBadgeEl.textContent = connected ? `Connecte (${currentUserRole})` : "Local";
   }
   updateRoleUi();
+}
+
+function setAuthModalOpen(open) {
+  if (!authModalEl) return;
+  isAuthModalOpen = open;
+  authModalEl.classList.toggle("hidden", !open);
+  authModalEl.setAttribute("aria-hidden", String(!open));
 }
 
 function validateWorkout(w) {
@@ -720,11 +756,6 @@ function autoLinkPlanWithWorkout(workout, plans) {
   const next = [...plans];
   next[targetIndex] = { ...next[targetIndex], linkedWorkoutId: workout.id };
   return next;
-}
-
-function toExportFilename() {
-  const date = getTodayIsoLocal();
-  return `aquapace-backup-${date}.json`;
 }
 
 async function fetchRemotePayload() {
@@ -1134,6 +1165,81 @@ function getFilteredWorkouts(workouts) {
   return workouts.filter((w) => w.type === selectedType);
 }
 
+function groupWorkoutsByWeek(workouts) {
+  const byWeek = new Map();
+  for (const workout of workouts) {
+    const weekKey = getWeekKeyFromIsoDate(workout.date);
+    const current = byWeek.get(weekKey) || [];
+    current.push(workout);
+    byWeek.set(weekKey, current);
+  }
+  return Array.from(byWeek.entries()).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+}
+
+function createWorkoutItem(workout, pr) {
+  const isDistancePr = pr.distanceIds.has(workout.id);
+  const isPacePr = pr.paceIds.has(workout.id);
+  const badges = [
+    `<span class="badge">${escapeHtml(labelType(workout.type))}</span>`,
+    `<span class="badge">${escapeHtml(labelType(workout.stroke || "crawl"))}</span>`,
+    `<span class="badge">${escapeHtml(labelType(workout.feeling || "correct"))}</span>`,
+    isDistancePr ? `<span class="badge badge-pr">PR Distance</span>` : "",
+    isPacePr ? `<span class="badge badge-pr">PR Allure</span>` : "",
+  ]
+    .filter(Boolean)
+    .join("");
+
+  const item = document.createElement("div");
+  item.className = "item";
+
+  const left = document.createElement("div");
+  left.innerHTML = `
+      <h3>${formatDateFR(workout.date)} - ${workout.distance} m / ${workout.duration} min</h3>
+      <p>${workout.notes ? escapeHtml(workout.notes) : ""}</p>
+      <div class="badges">
+        ${badges}
+      </div>
+    `;
+
+  const actions = document.createElement("div");
+  actions.className = "item-actions";
+
+  const editBtn = document.createElement("button");
+  editBtn.className = "edit";
+  editBtn.type = "button";
+  editBtn.textContent = "Modifier";
+  editBtn.addEventListener("click", () => {
+    fillFormWithWorkout(workout);
+    setEditingMode(workout.id);
+    form.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
+  const del = document.createElement("button");
+  del.className = "delete";
+  del.type = "button";
+  del.textContent = "Supprimer";
+  del.addEventListener("click", () => {
+    const ok = window.confirm("Supprimer cette seance ?");
+    if (!ok) return;
+    const next = loadWorkouts().filter((x) => x.id !== workout.id);
+    saveWorkouts(next);
+    const nextPlans = loadPlans().map((p) => (p.linkedWorkoutId === workout.id ? { ...p, linkedWorkoutId: null } : p));
+    savePlans(nextPlans);
+    if (editingWorkoutId === workout.id) {
+      form.reset();
+      setDefaultDate();
+      resetEditingMode();
+    }
+    render();
+  });
+
+  actions.appendChild(editBtn);
+  actions.appendChild(del);
+  item.appendChild(left);
+  item.appendChild(actions);
+  return item;
+}
+
 function renderPlans(workouts) {
   const allPlans = loadPlans();
   const plans = allPlans
@@ -1275,66 +1381,52 @@ function render() {
     emptyStateEl.textContent = "Aucune seance pour le moment.";
   }
 
-  for (const w of filtered) {
-    const isDistancePr = pr.distanceIds.has(w.id);
-    const isPacePr = pr.paceIds.has(w.id);
-    const badges = [
-      `<span class="badge">${escapeHtml(labelType(w.type))}</span>`,
-      `<span class="badge">${escapeHtml(labelType(w.stroke || "crawl"))}</span>`,
-      `<span class="badge">${escapeHtml(labelType(w.feeling || "correct"))}</span>`,
-      isDistancePr ? `<span class="badge badge-pr">PR Distance</span>` : "",
-      isPacePr ? `<span class="badge badge-pr">PR Allure</span>` : "",
-    ].filter(Boolean).join("");
+  const weekGroups = groupWorkoutsByWeek(filtered);
+  if (!hasInitializedWeekExpansion) {
+    expandedWeekKeys.add(getCurrentWeekKey());
+    hasInitializedWeekExpansion = true;
+  }
+  const availableWeekKeys = new Set(weekGroups.map(([weekKey]) => weekKey));
+  expandedWeekKeys = new Set([...expandedWeekKeys].filter((key) => availableWeekKeys.has(key)));
 
-    const item = document.createElement("div");
-    item.className = "item";
+  for (const [weekKey, weekWorkouts] of weekGroups) {
+    const weekDistance = weekWorkouts.reduce((sum, w) => sum + Number(w.distance || 0), 0);
+    const weekDuration = weekWorkouts.reduce((sum, w) => sum + Number(w.duration || 0), 0);
+    const expanded = expandedWeekKeys.has(weekKey);
 
-    const left = document.createElement("div");
-    left.innerHTML = `
-      <h3>${formatDateFR(w.date)} - ${w.distance} m / ${w.duration} min</h3>
-      <p>${w.notes ? escapeHtml(w.notes) : ""}</p>
-      <div class="badges">
-        ${badges}
+    const group = document.createElement("section");
+    group.className = "week-group";
+
+    const header = document.createElement("div");
+    header.className = "week-group-head";
+    header.innerHTML = `
+      <div>
+        <h3>${getWeekLabelFromKey(weekKey)}</h3>
+        <p>${weekWorkouts.length} seance(s) - ${weekDistance} m - ${weekDuration} min</p>
       </div>
     `;
 
-    const actions = document.createElement("div");
-    actions.className = "item-actions";
-
-    const editBtn = document.createElement("button");
-    editBtn.className = "edit";
-    editBtn.type = "button";
-    editBtn.textContent = "Modifier";
-    editBtn.addEventListener("click", () => {
-      fillFormWithWorkout(w);
-      setEditingMode(w.id);
-      form.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-
-    const del = document.createElement("button");
-    del.className = "delete";
-    del.type = "button";
-    del.textContent = "Supprimer";
-    del.addEventListener("click", () => {
-      const ok = window.confirm("Supprimer cette seance ?");
-      if (!ok) return;
-      const next = loadWorkouts().filter((x) => x.id !== w.id);
-      saveWorkouts(next);
-      const nextPlans = loadPlans().map((p) => (p.linkedWorkoutId === w.id ? { ...p, linkedWorkoutId: null } : p));
-      savePlans(nextPlans);
-      if (editingWorkoutId === w.id) {
-        form.reset();
-        setDefaultDate();
-        resetEditingMode();
-      }
+    const toggleBtn = document.createElement("button");
+    toggleBtn.type = "button";
+    toggleBtn.className = "btn-secondary week-toggle";
+    toggleBtn.textContent = expanded ? "Masquer" : "Afficher";
+    toggleBtn.setAttribute("aria-expanded", String(expanded));
+    toggleBtn.addEventListener("click", () => {
+      if (expandedWeekKeys.has(weekKey)) expandedWeekKeys.delete(weekKey);
+      else expandedWeekKeys.add(weekKey);
       render();
     });
+    header.appendChild(toggleBtn);
 
-    actions.appendChild(editBtn);
-    actions.appendChild(del);
-    item.appendChild(left);
-    item.appendChild(actions);
-    listEl.appendChild(item);
+    const content = document.createElement("div");
+    content.className = `week-group-content${expanded ? "" : " hidden"}`;
+    for (const workout of weekWorkouts) {
+      content.appendChild(createWorkoutItem(workout, pr));
+    }
+
+    group.appendChild(header);
+    group.appendChild(content);
+    listEl.appendChild(group);
   }
 
   const week = workouts.filter((w) => isInCurrentWeek(w.date));
@@ -1574,98 +1666,6 @@ clearAllBtn.addEventListener("click", () => {
   render();
 });
 
-exportDataBtn.addEventListener("click", () => {
-  const payload = {
-    app: "AquaPace",
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    monthlyGoal: loadMonthlyGoal(),
-    workouts: loadWorkouts(),
-    plans: loadPlans(),
-  };
-
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = toExportFilename();
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-  showDataMessage("Export termine.");
-});
-
-importDataBtn.addEventListener("click", () => {
-  importDataInput.click();
-});
-
-importDataInput.addEventListener("change", async () => {
-  const file = importDataInput.files && importDataInput.files[0];
-  if (!file) return;
-
-  try {
-    const raw = await file.text();
-    const parsed = JSON.parse(raw);
-
-    let rawWorkouts = [];
-    let rawPlans = [];
-    let importedGoal = null;
-
-    if (Array.isArray(parsed)) {
-      rawWorkouts = parsed;
-    } else if (parsed && typeof parsed === "object") {
-      rawWorkouts = Array.isArray(parsed.workouts) ? parsed.workouts : [];
-      rawPlans = Array.isArray(parsed.plans) ? parsed.plans : [];
-      if (Number.isFinite(Number(parsed.monthlyGoal)) && Number(parsed.monthlyGoal) > 0) {
-        importedGoal = Math.round(Number(parsed.monthlyGoal));
-      }
-    } else {
-      throw new Error("format");
-    }
-
-    const normalized = rawWorkouts.map(normalizeImportedWorkout).filter(Boolean);
-    const normalizedPlans = rawPlans.map(normalizeImportedPlan).filter(Boolean);
-    if (!normalized.length && rawWorkouts.length > 0) {
-      throw new Error("invalid-workouts");
-    }
-    if (!normalizedPlans.length && rawPlans.length > 0) {
-      throw new Error("invalid-plans");
-    }
-
-    const ok = window.confirm("Importer ce fichier va remplacer l'historique actuel. Continuer ?");
-    if (!ok) return;
-
-    saveWorkouts(normalized);
-    savePlans(normalizedPlans);
-    if (importedGoal != null) {
-      saveMonthlyGoal(importedGoal);
-      monthlyGoalInput.value = String(importedGoal);
-    }
-
-    form.reset();
-    setDefaultDate();
-    resetEditingMode();
-    clearFormError();
-    render();
-
-    const skippedCount = rawWorkouts.length - normalized.length;
-    const skippedPlans = rawPlans.length - normalizedPlans.length;
-    if (skippedCount > 0 || skippedPlans > 0) {
-      showDataMessage(
-        `Import termine: ${normalized.length} seances, ${normalizedPlans.length} plans importes (${skippedCount + skippedPlans} ignores).`,
-        true
-      );
-    } else {
-      showDataMessage(`Import termine: ${normalized.length} seances et ${normalizedPlans.length} plans importes.`);
-    }
-  } catch {
-    showDataMessage("Import impossible: fichier JSON invalide ou incompatible.", true);
-  } finally {
-    importDataInput.value = "";
-  }
-});
-
 if (signInBtn) {
   signInBtn.addEventListener("click", async () => {
   if (!supabaseClient) {
@@ -1686,6 +1686,7 @@ if (signInBtn) {
     return;
   }
   authPasswordEl.value = "";
+  setAuthModalOpen(false);
   });
 }
 
@@ -1723,8 +1724,35 @@ if (signOutBtn) {
     return;
   }
   showAuthStatus("Deconnecte.");
+  setAuthModalOpen(false);
   });
 }
+
+if (openAuthModalBtn) {
+  openAuthModalBtn.addEventListener("click", () => {
+    setAuthModalOpen(true);
+  });
+}
+
+if (closeAuthModalBtn) {
+  closeAuthModalBtn.addEventListener("click", () => {
+    setAuthModalOpen(false);
+  });
+}
+
+if (authModalEl) {
+  authModalEl.addEventListener("click", (event) => {
+    if (event.target === authModalEl) {
+      setAuthModalOpen(false);
+    }
+  });
+}
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && isAuthModalOpen) {
+    setAuthModalOpen(false);
+  }
+});
 
 if (saveRoleBtn) {
   saveRoleBtn.addEventListener("click", async () => {

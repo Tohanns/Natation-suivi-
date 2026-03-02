@@ -14,35 +14,18 @@
         <h1>AquaPace</h1>
         <span class="brand-pill">Suivi natation</span>
       </div>
-      <div class="auth-card">
-        <div class="auth-head">
-          <strong>Synchronisation cloud</strong>
-          <span id="authUserBadge" class="auth-user-badge">Local</span>
-        </div>
-        <div class="auth-panel">
-          <input type="email" id="authEmail" placeholder="Email" />
-          <input type="password" id="authPassword" placeholder="Mot de passe" />
-        </div>
-        <div class="auth-actions">
-          <button type="button" id="signInBtn" class="btn-secondary">Connexion</button>
-          <button type="button" id="signUpBtn" class="btn-secondary">Creer compte</button>
-          <button type="button" id="signOutBtn" class="btn-secondary hidden">Deconnexion</button>
-        </div>
-        <div id="rolePanel" class="role-panel hidden">
-          <label for="userRoleSelect">Role</label>
-          <select id="userRoleSelect">
-            <option value="swimmer">Nageur</option>
-            <option value="coach">Coach</option>
-          </select>
-          <button type="button" id="saveRoleBtn" class="btn-secondary">Enregistrer role</button>
-        </div>
-        <p class="auth-hint">Connecte-toi pour retrouver tes donnees sur PC et mobile.</p>
+      <div class="account-actions">
+        <span id="authUserBadge" class="auth-user-badge">Local</span>
+        <button type="button" id="openAuthModalBtn" class="btn-secondary">Connexion</button>
       </div>
-      <div class="data-actions global-data-actions">
-        <button type="button" id="exportDataBtn" class="btn-secondary">Exporter</button>
-        <button type="button" id="importDataBtn" class="btn-secondary">Importer</button>
-        <input type="file" id="importDataInput" accept="application/json" class="hidden" />
-      </div>
+    </div>
+    <div id="rolePanel" class="role-panel hidden">
+      <label for="userRoleSelect">Role</label>
+      <select id="userRoleSelect">
+        <option value="swimmer">Nageur</option>
+        <option value="coach">Coach</option>
+      </select>
+      <button type="button" id="saveRoleBtn" class="btn-secondary">Enregistrer role</button>
     </div>
     <p id="authStatus" class="data-message hidden" role="status" aria-live="polite"></p>
     <p id="syncStatus" class="data-message hidden" role="status" aria-live="polite"></p>
@@ -264,6 +247,24 @@
     </section>
   </main>
 
+  <div id="authModal" class="modal-backdrop hidden" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">
+      <div class="auth-head">
+        <strong id="authModalTitle">Compte</strong>
+        <button type="button" id="closeAuthModalBtn" class="btn-secondary">Fermer</button>
+      </div>
+      <div class="auth-panel">
+        <input type="email" id="authEmail" placeholder="Email" />
+        <input type="password" id="authPassword" placeholder="Mot de passe" />
+      </div>
+      <div class="auth-actions">
+        <button type="button" id="signInBtn" class="btn-secondary">Connexion</button>
+        <button type="button" id="signUpBtn" class="btn-secondary">Creer compte</button>
+        <button type="button" id="signOutBtn" class="btn-secondary hidden">Deconnexion</button>
+      </div>
+      <p class="auth-hint">Connecte-toi pour retrouver tes donnees sur PC et mobile.</p>
+    </div>
+  </div>
   <script src="app.js"></script>
 </body>
 </html>
